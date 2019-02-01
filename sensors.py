@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # !/usr/bin/python3
 # author: Gavin Xue
-# last edit: 20190121
+# last edit: 20190201
 
 import requests
 import json
@@ -10,6 +10,7 @@ import sys
 from urllib import parse
 import pandas as pd
 import urllib3
+import math
 
 # 禁用安全请求警告
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -82,15 +83,28 @@ class SensorsProject(object):
     def generate_event_table(self):
         print('-- begin to obtain project events info --')
         api_url = self.url + '/api/events/all'
+
         results = requests.get(url=api_url, params={'project': self.project, 'invisible': True},
                                headers={'sensorsdata-token': self.token}, verify=False).text
         df_event = pd.read_json(results)
 
         api_url_properties = self.url + '/api/event/properties'
-        properties = requests.get(api_url_properties, params={'project': self.project, 'show_all': True,
-                                                              'cache': 'false',
-                                                              'events': ','.join([name for name in df_event["name"]])},
-                                  verify=False, headers={'sensorsdata-token': self.token}).json()
+
+        # 解决事件数过多导致URL过长的问题, 保险起见以6000个字符作为分隔，并无实际含义
+        events_str = ','.join([name for name in df_event["name"]])
+        n = math.ceil(len(events_str)/6000)
+        map_len = math.ceil(len(df_event["name"])/n)
+        properties = {}
+        print(len(df_event["name"]))
+        while n >= 1:
+            event_str = ','.join([name for name in df_event["name"][map_len*(n-1):map_len*n]])
+            tmp = requests.get(api_url_properties, params={'project': self.project, 'show_all': True,
+                                                           'cache': 'false',
+                                                           'events': event_str},
+                               verify=False, headers={'sensorsdata-token': self.token}).json()
+            properties.update(tmp)
+            n -= 1
+
         prop_list = []
         for event_prop in properties.items():
             prop_list += event_prop[1]['event']
@@ -116,7 +130,8 @@ class SensorsProject(object):
     def export_event_design(self, virtual_event=False, default_prop=False, invisible_event=True):
         print('-- begin to export event design --')
         df_export = self.sa_event_design.event_table[['event_en', 'event_cn', 'visible', 'property_en',
-                                                      'property_cn', 'data_type_cn', 'db_column_name']]
+                                                      'property_cn', 'data_type_cn', 'db_column_name',
+                                                      'comment', 'virtual']]
         # 去除各种筛选条件
         if not default_prop:
             # 如果一个事件没有自定义属性，需要指定一个无自定义属性的字段
@@ -124,14 +139,16 @@ class SensorsProject(object):
             tmp = df_export.loc[~df_export.event_en.isin(has_prop_event)][['event_en', 'event_cn',
                                                                            'visible', 'property_en',
                                                                            'property_cn',
-                                                                           'data_type_cn', 'db_column_name']]
-            tmp.property_en, tmp.property_cn, tmp.data_type_cn, tmp.db_column_name = '-', '-', '-', '-',
+                                                                           'data_type_cn', 'db_column_name',
+                                                                           'comment', 'virtual']]
+            tmp.property_en, tmp.property_cn, tmp.data_type_cn, tmp.db_column_name, tmp.comment = '-', '-', \
+                                                                                                  '-', '-', '-'
             tmp.drop_duplicates(['event_en'], inplace=True)
             df_export = df_export.loc[~df_export.property_en.str.contains('\$')]
             df_export = df_export.append(tmp)
 
         if not virtual_event:
-            df_export = df_export.loc[~df_export.event_en.str.contains('\$')]
+            df_export = df_export.loc[~df_export.virtual]
 
         if not invisible_event:
             df_export = df_export.loc[df_export.visible]
@@ -140,10 +157,11 @@ class SensorsProject(object):
         # if not invisible_prop:
         #     df_export = df_export.loc[df_export.is_in_use]
 
-        df_export.drop(['db_column_name'], axis=1, inplace=True)
+        df_export.drop(['db_column_name', 'virtual'], axis=1, inplace=True)
         df_export.rename(index=str, columns={'event_en': '事件英文名', 'event_cn': '事件中文名',
                                              'visible': '事件是否可见', 'property_en': '属性英文名',
-                                             'property_cn': '属性中文名', 'data_type_cn': '数据类型'}, inplace=True)
+                                             'property_cn': '属性中文名', 'data_type_cn': '数据类型',
+                                             'comment': '事件备注信息'}, inplace=True)
 
         print('-- totally export property {} lines --'.format(df_export.shape[0]))
         result_path = '/'.join(os.path.realpath(sys.argv[0]).split('/')[:-4]) + '/export_event_design.xlsx'

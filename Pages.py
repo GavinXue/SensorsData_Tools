@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # !/usr/bin/python3
 # author: Gavin Xue
-# last edit: 20190121
+# last edit: 20190201
 
 from PyQt5 import QtCore, QtGui, QtWidgets
 from PyQt5.QtWidgets import QMessageBox
@@ -92,6 +92,7 @@ class Login(QtWidgets.QMainWindow):
         self.login_btn = QtWidgets.QPushButton(self.centralwidget)
         self.login_btn.setGeometry(QtCore.QRect(250, 150, 141, 32))
         self.login_btn.setObjectName("login_btn")
+        self.sa = self.login_btn.clicked.connect(self.login_access)
 
         self.exit_btn = QtWidgets.QPushButton(self.centralwidget)
         self.exit_btn.setGeometry(QtCore.QRect(430, 150, 141, 32))
@@ -107,7 +108,6 @@ class Login(QtWidgets.QMainWindow):
         MainWindow.setStatusBar(self.statusbar)
 
         self.exit_btn.clicked.connect(MainWindow.close)
-        self.sa = self.login_btn.clicked.connect(self.login_access)
 
         self.retranslateUi(MainWindow)
         QtCore.QMetaObject.connectSlotsByName(MainWindow)
@@ -132,18 +132,25 @@ class Login(QtWidgets.QMainWindow):
         self.move(x / 2, y / 2)
 
     def login_access(self):
-        sa_url = self.url.text()
-        sa_project = self.project.text()
-        sa_user = self.user_name.text()
-        sa_pw = self.password.text()
-        sa = SensorsProject(sa_url, sa_project, sa_user, sa_pw)
-        if sa.error:
+        try:
+            sa_url = self.url.text()
+            sa_project = self.project.text()
+            sa_user = self.user_name.text()
+            sa_pw = self.password.text()
+            sa = SensorsProject(sa_url, sa_project, sa_user, sa_pw)
+            if sa.error:
+                QMessageBox.warning(self,
+                                    "error",
+                                    sa.error,
+                                    QMessageBox.Yes)
+            if sa.token:
+                self.login_success.emit(sa)
+
+        except Exception as e:
             QMessageBox.warning(self,
                                 "error",
-                                sa.error,
+                                str(e),
                                 QMessageBox.Yes)
-        if sa.token:
-            self.login_success.emit(sa)
 
 
 class HomePage(QtWidgets.QMainWindow):
